@@ -4,6 +4,7 @@ import shutil
 import tempfile
 import uuid
 from pathlib import Path
+import os
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +13,34 @@ from fastapi.staticfiles import StaticFiles
 
 # yt_dlp must be installed and ffmpeg available in PATH
 from yt_dlp import YoutubeDL
+
+# Try to locate an ffmpeg binary automatically.
+# - If env var FFMPEG_PATH is set, use that
+# - Otherwise attempt to fetch a static binary via imageio-ffmpeg (user-space)
+def _get_ffmpeg_path() -> str | None:
+	path_from_env = os.environ.get("FFMPEG_PATH")
+	if path_from_env and Path(path_from_env).exists():
+		return path_from_env
+	try:
+		import imageio_ffmpeg  # type: ignore
+		return imageio_ffmpeg.get_ffmpeg_exe()  # downloads a static ffmpeg if needed
+	except Exception:
+		return None
+
+FFMPEG_PATH: str | None = _get_ffmpeg_path()
+
+# Optional tuning via environment variables
+COOKIES_FILE: str | None = os.environ.get("YTDLP_COOKIES_FILE")
+if COOKIES_FILE and not Path(COOKIES_FILE).exists():
+	COOKIES_FILE = None
+
+PLAYER_CLIENT_ENV = os.environ.get("YTDLP_PLAYER_CLIENT", "android").strip()
+PLAYER_CLIENTS = [c.strip() for c in PLAYER_CLIENT_ENV.split(",") if c.strip()]
+
+DEFAULT_UA = os.environ.get(
+	"HTTP_USER_AGENT",
+	"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+)
 
 app = FastAPI(title="YouTube to MP3 (Private Backend)")
 
@@ -25,8 +54,6 @@ app.add_middleware(
 )
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "web"
-if FRONTEND_DIR.exists():
-	app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="static")
 
 
 @app.get("/health")
@@ -65,7 +92,17 @@ async def download(url: str = Query(..., description="YouTube video URL")) -> Fi
 		"noprogress": True,
 		"nocheckcertificate": True,
 		"quiet": True,
+		"http_headers": {"User-Agent": DEFAULT_UA},
+		"extractor_args": {"youtube": {"player_client": PLAYER_CLIENTS}},
 	}
+
+	# Provide ffmpeg path if we resolved one above
+	if FFMPEG_PATH:
+		ydl_opts["ffmpeg_location"] = FFMPEG_PATH
+
+	# Provide cookies file if available (improves access to age/region restricted videos)
+	if COOKIES_FILE:
+		ydl_opts["cookiefile"] = COOKIES_FILE
 
 	try:
 		with YoutubeDL(ydl_opts) as ydl:
@@ -84,6 +121,8 @@ async def download(url: str = Query(..., description="YouTube video URL")) -> Fi
 		stable_dir.mkdir(parents=True, exist_ok=True)
 		stable_path = stable_dir / f"{uuid.uuid4().hex}_{target_name}"
 		shutil.move(str(produced_file), str(stable_path))
+	except Exception as exc:  # surface error details
+		raise HTTPException(status_code=500, detail=f"Conversion failed: {exc}")
 	finally:
 		# Cleanup the per-request temp directory
 		temp_dir_obj.cleanup()

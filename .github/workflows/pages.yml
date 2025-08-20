@@ -27,6 +27,9 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
+      - name: Inject API base into config.js
+        run: |
+          echo "window.API_BASE = '${{ secrets.BACKEND_URL }}';" > web/config.js
       - name: Upload static site artifact
         uses: actions/upload-pages-artifact@v3
         with:

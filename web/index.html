@@ -28,13 +28,16 @@
 		<div class="notice small">If this is deployed publicly, add rate limits and auth. Public YouTube‑to‑MP3 APIs are unstable; this is self‑hosted.</div>
 		<footer class="small">Backend: FastAPI + yt‑dlp + ffmpeg</footer>
 	</div>
+	<script src="config.js"></script>
 	<script>
 	const btn = document.getElementById('btn');
 	const input = document.getElementById('url');
 	const api = document.getElementById('api');
+	const preset = (window.API_BASE || '').replace(/\/$/, '');
+	if (preset) { api.value = preset; }
 	btn.addEventListener('click', async () => {
 		const url = input.value.trim();
-		const base = (api.value || '').replace(/\/$/, '');
+		const base = (api.value || preset || '').replace(/\/$/, '');
 		const API_BASE = base || '';
 		if (!url) { alert('Please paste a YouTube URL.'); return; }
 		btn.disabled = true; btn.textContent = 'Converting…';

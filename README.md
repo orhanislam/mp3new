@@ -34,8 +34,24 @@ docker run --rm -p 8000:8000 yt2mp3
 ```
 
 ### Deploying
-- Render: Create a Web Service from this repo. Use the Dockerfile or a Python environment with a Start Command like `uvicorn server.main:app --host 0.0.0.0 --port 10000`. Ensure `ffmpeg` is installed (Docker image recommended).
+- Render (one‑click): Create a Web Service from this repo. Use the Dockerfile (recommended) or a Python environment with a Start Command like `uvicorn server.main:app --host 0.0.0.0 --port $PORT`. Ensure `ffmpeg` is installed (Docker image already handles it).
 - Railway/Heroku/VPS: Use the Dockerfile or install `ffmpeg` and run the same command.
+
+#### GitHub Pages + private backend
+This repo includes a GitHub Pages workflow that publishes the static UI in `web/`. GitHub Pages cannot run a Python backend, so you must deploy the backend separately and point the UI to it.
+
+Steps:
+1) Deploy the backend as a container using the provided Dockerfile (e.g., on Render/Railway/Fly/your VPS). It will serve both the API and UI if you keep `web/` in the image. Start command:
+   ```bash
+   uvicorn server.main:app --host 0.0.0.0 --port ${PORT:-8000}
+   ```
+2) Copy the backend URL (e.g., `https://your-backend.onrender.com`).
+3) In your GitHub repository, add a Repository Secret named `BACKEND_URL` with that URL.
+4) Push to `main`/`master`. The GitHub Pages workflow injects `window.API_BASE` into `web/config.js` so the static site calls your backend.
+
+Notes:
+- If `BACKEND_URL` is not set, the UI will try same-origin requests which will fail on Pages. Always set the secret.
+- CORS is already enabled for all origins. Lock it down in `server/main.py` for production.
 
 ### API
 - `GET /api/download?url=<youtube_url>` → returns an MP3 file download.

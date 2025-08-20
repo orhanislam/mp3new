@@ -6,14 +6,27 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 # yt_dlp must be installed and ffmpeg available in PATH
 from yt_dlp import YoutubeDL
 
 app = FastAPI(title="YouTube to MP3 (Private Backend)")
 
+# Allow CORS so a separate static host (e.g., GitHub Pages) can call the API
+app.add_middleware(
+	CORSMiddleware,
+	allow_origins=["*"],
+	allow_credentials=False,
+	allow_methods=["GET"],
+	allow_headers=["*"],
+)
+
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "web"
+if FRONTEND_DIR.exists():
+	app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="static")
 
 
 @app.get("/health")
@@ -86,12 +99,12 @@ async def download(url: str = Query(..., description="YouTube video URL")) -> Fi
 	)
 
 
+# Fallback root when running without static mount (kept for safety)
 @app.get("/", response_class=HTMLResponse)
 async def root_index() -> HTMLResponse:
 	index_file = FRONTEND_DIR / "index.html"
 	if index_file.exists():
 		return FileResponse(str(index_file))
-	# Minimal fallback UI
 	return HTMLResponse(content=(
 		"""<!doctype html>
 <html>
@@ -120,6 +133,7 @@ async def root_index() -> HTMLResponse:
 		<footer class=\"small\">Backend: FastAPI + yt‑dlp + ffmpeg</footer>
 	</div>
 	<script>
+	const API_BASE = (window.API_BASE || '').replace(/\/$/, '');
 	const btn = document.getElementById('btn');
 	const input = document.getElementById('url');
 	btn.addEventListener('click', async () => {
@@ -127,7 +141,7 @@ async def root_index() -> HTMLResponse:
 		if (!url) { alert('Please paste a YouTube URL.'); return; }
 		btn.disabled = true; btn.textContent = 'Converting…';
 		try {
-			const resp = await fetch(`/api/download?url=${encodeURIComponent(url)}`);
+			const resp = await fetch(`${API_BASE}/api/download?url=${encodeURIComponent(url)}`);
 			if (!resp.ok) {
 				const text = await resp.text();
 				throw new Error(text || `Request failed: ${resp.status}`);
